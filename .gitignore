@@ -1,0 +1,4 @@
+# Ignore data folders
+/data/
+/new_data/
+/models/
