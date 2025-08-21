@@ -45,13 +45,32 @@ for disease_class in disease_classes:
         
     images = [f for f in os.listdir(class_dir) if os.path.isfile(os.path.join(class_dir, f))]
     
+    # ✨ THE FIX: Add a guard clause here ✨
+    # Check if the list of images is empty before trying to split it.
+    if not images:
+        print(f"  [WARNING] No images found for class '{disease_class}'. Skipping.")
+        continue # Move to the next class
+
+    # If the script reaches here, we know we have images to split.
+    # The rest of the code can now run safely.
+    
     # First, split into training and (validation + test)
     train_images, val_test_images = train_test_split(images, test_size=(1.0 - TRAIN_RATIO), random_state=42)
     
     # Now split (validation + test) into validation and test
     # The new test_size is relative to the val_test_images set
     relative_test_size = VAL_RATIO / (1.0 - TRAIN_RATIO)
-    val_images, test_images = train_test_split(val_test_images, test_size=relative_test_size, random_state=42)
+
+    # ✨ ANOTHER GUARD CLAUSE: Handle cases with very few images ✨
+    # If there's only one image in the val_test set, we can't split it.
+    if len(val_test_images) < 2:
+        print(f"  [WARNING] Not enough images for class '{disease_class}' to create a validation/test split. Placing all in training.")
+        # In this case, we'll just copy all images to the training set.
+        train_images = images
+        val_images = []
+        test_images = []
+    else:
+        val_images, test_images = train_test_split(val_test_images, test_size=relative_test_size, random_state=42)
     
     # Function to copy files
     def copy_files(file_list, destination_folder):

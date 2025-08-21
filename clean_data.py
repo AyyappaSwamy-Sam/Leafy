@@ -1,41 +1,76 @@
-# NEW CELL: DATASET CLEANING SCRIPT
-
 import os
 from PIL import Image
 from tqdm import tqdm
-DATA_DIR = "./new_data"
-def clean_dataset(base_dir):
+import concurrent.futures
+
+
+DATA_DIR = "./data"
+# This script will verify every image in your dataset and remove corrupted ones.
+
+def verify_image(file_path):
     """
-    Iterates through all files in a directory, tries to open them as images,
-    and deletes them if they are corrupt.
+    Tries to open and fully load an image file. 
+    If any part of this process fails, it returns the path for deletion.
+    Returns None if the image is valid.
     """
-    print(f"Starting dataset cleaning in: {base_dir}")
-    corrupted_files_found = 0
+    try:
+        # Open the image file
+        img = Image.open(file_path)
+        # The key is to fully load the image data into memory.
+        # This will trigger an error for a wide range of corruptions.
+        # We also check that it's a recognized format.
+        img.load()
+        
+        # A final check to ensure it's a format we can use (e.g., not a weird BMP variant)
+        if img.format.lower() not in ['jpeg', 'png', 'bmp']:
+             print(f"Unsupported format found: {img.format} at {file_path}")
+             return file_path
+
+        return None # If all checks pass, the image is good.
+    except Exception as e:
+        # If ANY exception occurs (IOError, UnidentifiedImageError, the NoneType error, etc.),
+        # we know the file is bad.
+        print(f"Corrupted file detected: {file_path} (Reason: {e})")
+        return file_path
+
+def clean_dataset_parallel(root_dir):
+    """
+    Uses multiple CPU cores to speed up the image verification process.
+    """
+    print(f"--- Starting Parallel Dataset Cleaning in: {root_dir} ---")
     
-    # Use os.walk to go through all subdirectories
-    for dirpath, _, filenames in tqdm(os.walk(base_dir), desc="Scanning directories"):
+    # 1. Find all image file paths
+    image_paths = []
+    for dirpath, _, filenames in os.walk(root_dir):
         for filename in filenames:
-            # We only care about common image file extensions
-            if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif')):
-                file_path = os.path.join(dirpath, filename)
-                try:
-                    # Open the image file
-                    img = Image.open(file_path)
-                    # This is a more thorough check that the file can be read
-                    img.verify() 
-                except (IOError, SyntaxError, Image.UnidentifiedImageError) as e:
-                    print(f"\n---> Corrupted file found: {file_path}")
-                    print(f"     Reason: {e}")
-                    # Delete the corrupted file
-                    os.remove(file_path)
-                    print(f"     DELETED.")
-                    corrupted_files_found += 1
+            if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp')):
+                image_paths.append(os.path.join(dirpath, filename))
     
-    if corrupted_files_found == 0:
-        print("\nDataset cleaning complete. No corrupted files were found.")
+    print(f"Found {len(image_paths)} total images to verify.")
+    
+    # 2. Use a process pool to check images in parallel
+    corrupted_files = []
+    # Use tqdm to show a progress bar
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        # map the verify_image function to all paths
+        results = list(tqdm(executor.map(verify_image, image_paths), total=len(image_paths), desc="Verifying Images"))
+
+    # 3. Filter out the None results to get the list of corrupted files
+    corrupted_files = [path for path in results if path is not None]
+    
+    # 4. Delete the corrupted files
+    if not corrupted_files:
+        print("\n--- Dataset cleaning complete. No corrupted files were found! ---")
     else:
-        print(f"\nDataset cleaning complete. Total corrupted files removed: {corrupted_files_found}")
+        print(f"\n--- Found {len(corrupted_files)} corrupted files. Deleting them now... ---")
+        for file_path in corrupted_files:
+            try:
+                os.remove(file_path)
+                print(f"DELETED: {file_path}")
+            except OSError as e:
+                print(f"ERROR deleting {file_path}: {e}")
+        print(f"\n--- Dataset cleaning complete. Removed {len(corrupted_files)} files. ---")
 
 # --- RUN THE CLEANING PROCESS ---
 # This will check your train, val, and test sets.
-clean_dataset(DATA_DIR)
+clean_dataset_parallel(DATA_DIR)
