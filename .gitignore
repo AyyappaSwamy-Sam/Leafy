@@ -2,3 +2,7 @@
 /data/
 /new_data/
 /runs/
+/wandb/
+/checkpoints/
+/logs/
+/models/
